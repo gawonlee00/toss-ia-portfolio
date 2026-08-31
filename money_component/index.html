@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-family: "Pretendard", "Noto Sans KR", Arial, sans-serif;
+  }
+  .wrap { width: 100%; box-sizing: border-box; }
+  .label {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(49, 51, 63, 1);
+    margin: 0 0 6px 0;
+  }
+  .input-wrap { position: relative; width: 100%; }
+  .won {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    font-size: 16px;
+    pointer-events: none;
+  }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 40px;
+    border: 1px solid rgba(49, 51, 63, 0.2);
+    border-radius: 8px;
+    padding: 8px 38px 8px 31px;
+    font-size: 16px;
+    color: #111827;
+    background: white;
+    outline: none;
+    text-align: right;
+  }
+  input:focus {
+    border-color: #3182f6;
+    box-shadow: 0 0 0 1px #3182f6;
+  }
+  .suffix {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    font-size: 14px;
+    pointer-events: none;
+  }
+  .hint {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 5px;
+    min-height: 18px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label" id="label"></div>
+  <div class="input-wrap">
+    <span class="won">₩</span>
+    <input id="money" inputmode="numeric" autocomplete="off" />
+    <span class="suffix">원</span>
+  </div>
+  <div class="hint" id="hint"></div>
+</div>
+<script>
+(function () {
+  let currentArgs = {};
+  let lastSent = null;
+  let timer = null;
+
+  function post(type, data) {
+    window.parent.postMessage(Object.assign({
+      isStreamlitMessage: true,
+      type: type
+    }, data || {}), "*");
+  }
+
+  function ready() {
+    post("streamlit:componentReady", {apiVersion: 1});
+  }
+
+  function setValue(value) {
+    post("streamlit:setComponentValue", {value: value});
+  }
+
+  function setHeight() {
+    post("streamlit:setFrameHeight", {height: 92});
+  }
+
+  function digitsOnly(s) {
+    return String(s || "").replace(/[^\d]/g, "");
+  }
+
+  function formatDigits(s) {
+    s = digitsOnly(s).replace(/^0+(?=\d)/, "");
+    if (!s) return "0";
+    return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function numericValue(s) {
+    const d = digitsOnly(s);
+    if (!d) return 0;
+    const n = Number(d);
+    return Number.isFinite(n) ? Math.floor(n) : 0;
+  }
+
+  function koreanNumber(num) {
+    num = Math.floor(Math.max(0, Number(num) || 0));
+    if (num === 0) return "영 원";
+
+    const digit = ["", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구"];
+    const small = ["", "십", "백", "천"];
+    const big = ["", "만", "억", "조", "경"];
+
+    function chunkToKorean(chunk) {
+      let out = "";
+      const s = String(chunk).padStart(4, "0");
+      for (let i = 0; i < 4; i++) {
+        const d = Number(s[i]);
+        if (!d) continue;
+        const pos = 3 - i;
+        // Money-reading convention: 1 in 십/백/천 is usually omitted.
+        if (d !== 1 || pos === 0) out += digit[d];
+        out += small[pos];
+      }
+      return out;
+    }
+
+    let parts = [];
+    let group = 0;
+    while (num > 0 && group < big.length) {
+      const chunk = num % 10000;
+      if (chunk) parts.unshift(chunkToKorean(chunk) + big[group]);
+      num = Math.floor(num / 10000);
+      group++;
+    }
+    return parts.join("") + " 원";
+  }
+
+  const input = document.getElementById("money");
+  const label = document.getElementById("label");
+  const hint = document.getElementById("hint");
+
+  function renderValue(value, preserveFocus) {
+    let n = Math.floor(Math.max(0, Number(value) || 0));
+    const min = Number(currentArgs.min_value ?? 0);
+    const max = Number(currentArgs.max_value ?? Number.MAX_SAFE_INTEGER);
+    n = Math.max(min, Math.min(max, n));
+    input.value = formatDigits(String(n));
+    hint.textContent = koreanNumber(n);
+    if (preserveFocus) {
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+    return n;
+  }
+
+  input.addEventListener("input", function () {
+    const focused = document.activeElement === input;
+    let n = numericValue(input.value);
+    const min = Number(currentArgs.min_value ?? 0);
+    const max = Number(currentArgs.max_value ?? Number.MAX_SAFE_INTEGER);
+    n = Math.max(min, Math.min(max, n));
+
+    // Visual formatting happens immediately, before Streamlit reruns.
+    input.value = formatDigits(String(n));
+    hint.textContent = koreanNumber(n);
+
+    // Keep caret at end, which is the natural mode for large money entry.
+    if (focused) {
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+
+    // Debounce backend update; live appearance remains immediate.
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      if (n !== lastSent) {
+        lastSent = n;
+        setValue(n);
+      }
+    }, 180);
+  });
+
+  input.addEventListener("blur", function () {
+    const n = renderValue(numericValue(input.value), false);
+    if (n !== lastSent) {
+      lastSent = n;
+      setValue(n);
+    }
+  });
+
+  window.addEventListener("message", function (event) {
+    const data = event.data;
+    if (!data || data.type !== "streamlit:render") return;
+    currentArgs = data.args || {};
+    label.textContent = currentArgs.label || "";
+
+    const incoming = Number(currentArgs.value ?? currentArgs.default_value ?? 0);
+    // Don't overwrite what the user is actively typing unless value truly differs.
+    if (document.activeElement !== input || numericValue(input.value) !== incoming) {
+      renderValue(incoming, document.activeElement === input);
+    }
+    setHeight();
+  });
+
+  ready();
+  setHeight();
+})();
+</script>
+</body>
+</html>
