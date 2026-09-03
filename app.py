@@ -49,7 +49,7 @@ with head1:
     st.image(TOSS_LOGO_URL, width=180)
 with head2:
     st.title("IA Portfolio Web v1.4.2")
-    st.caption("비공식 보험 Needs 분석 웹도구 · 토스/토스인슈어런스의 공식 서비스가 아닙니다. 개발자 : IA-Gawonie")
+    st.caption("비공식 보험 Needs 분석 웹도구 · 토스/토스인슈어런스의 공식 서비스가 아닙니다. 개발자 : IA-OWL")
 
 st.warning(
     "웹 전용 익명 상담 모드입니다. 실명, 전화번호, 이메일, 주민등록번호, 주소, 회사명, 병원명, "
